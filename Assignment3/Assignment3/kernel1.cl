@@ -1,4 +1,4 @@
-__kernel void kernel1(__global int *gdata, __local int *sdata) {
+kernel void kernel1(global int *gdata, local int *sdata) {
 	unsigned int tid = get_local_id(0);
 	unsigned int gid = get_global_id(0);
 
@@ -18,3 +18,4 @@ __kernel void kernel1(__global int *gdata, __local int *sdata) {
 	if (tid == 0)
 		gdata[get_group_id(0)] = sdata[0];
 }
+ 

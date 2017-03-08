@@ -12,17 +12,50 @@
 
 #include <windows.h>
 #include <algorithm>
+#include <ctime>
 
-#define ARRAYSIZE   1 * 1024
+bool isPow2(unsigned long long int x) {
+	return (x != 0) && ((x & (x - 1)) == 0);
+}
+
+//http://graphics.stanford.edu/~seander/bithacks.html#RoundUpPowerOf2
+unsigned long long roundUpPow2(unsigned long long v) {
+	v--;
+	v |= v >> 1;
+	v |= v >> 2;
+	v |= v >> 4;
+	v |= v >> 8;
+	v |= v >> 16;
+	v |= v >> 32;
+	v++;
+	return v;
+}
 
 int main() {
+	size_t arraySizeContent = 1024;
+
+	printf("Choose array size: \n");
+
+	bool acceptableSize = false;
+	while (!acceptableSize) {
+		scanf_s("%d", &arraySizeContent);
+		if (arraySizeContent > 1024 * 1024 * 128) {
+			printf("Easy there m8\n");
+		} else {
+			acceptableSize = true;
+		}
+	}
+
+	size_t arraySize = arraySizeContent;
+	bool isPower2 = isPow2(arraySizeContent);
+
 	/* Init OpenCL variables */
-	cl_platform_id *platforms = nullptr;
-	cl_device_id device_id = nullptr;
-	cl_context context = nullptr;
-	cl_command_queue command_queue = nullptr;
-	cl_program program = nullptr;
-	cl_kernel kernel = nullptr;
+	cl_platform_id *platforms;
+	cl_device_id device_id = NULL;
+	cl_context context = NULL;
+	cl_command_queue command_queue = NULL;
+	cl_program program = NULL;
+	cl_kernel kernel = NULL;
 	cl_uint ret_num_devices;
 	cl_uint ret_num_platforms;
 	cl_int err;
@@ -93,20 +126,43 @@ int main() {
 
 	/* Create data */
 	printf("Generating data...\n");
-	int result[2];
-	int *inputArray = new int(ARRAYSIZE);
+	
+	// Oops, we probably want to round this or something...
+	//http://developer.amd.com/resources/articles-whitepapers/opencl-optimization-case-study-simple-reductions/
+	// Just pad everything with zeroes...
+	if (!isPower2) {
+		arraySize = roundUpPow2(arraySizeContent);
+	}
+
+	int *inputArray = new int[arraySize];
+	int *result = new int[arraySize];
+	
+	srand(time(NULL));
+	int min = -100;
+	int max = 100;
 
 	QueryPerformanceCounter(&start_generate);
-	for (int i = 0; i < ARRAYSIZE; i++)
+	for (int i = 0; i < arraySize; i++)
 	{
-		inputArray[i] = rand();
+		if (i < arraySizeContent)
+			inputArray[i] = rand() % (max - min + 1) + min;
+		else
+			inputArray[i] = 0;
 	}
 	QueryPerformanceCounter(&end_generate);
 	printf("Generate  :    %f msec\n", (double)(end_generate.QuadPart - start_generate.QuadPart) / freq.QuadPart * 1000.0);
+	
+	/* Create Buffer Objects */
+	cl_gdata = clCreateBuffer(context, CL_MEM_READ_WRITE, sizeof(int) * arraySize, NULL, &err);
+	checkError(err, "Couldn't create buffer");
+
+	/* Copy input data to the memory buffer */
+	err = clEnqueueWriteBuffer(command_queue, cl_gdata, CL_TRUE, 0, sizeof(int) * arraySize, inputArray, 0, NULL, NULL);
+	checkError(err, "Couldn't enqueue write buffer");
 
 	/* TODO: Kernel selection */
 	// TODO: CODE
-	
+
 	/* Create kernel */
 	program = build_program(context, device_id, fileName);
 
@@ -114,23 +170,32 @@ int main() {
 	kernel = clCreateKernel(program, kernelName, &err);
 	checkError(err, "Couldn't create kernel");
 
-	/* Create Buffer Objects */
-	cl_gdata = clCreateBuffer(context, CL_MEM_READ_WRITE, sizeof(inputArray) * ARRAYSIZE, NULL, &err);
-	checkError(err, "Couldn't create buffer");
-
-	/* Copy input data to the memory buffer */
-	err = clEnqueueWriteBuffer(command_queue, cl_gdata, CL_TRUE, 0, sizeof(inputArray) * ARRAYSIZE, inputArray, 0, NULL, NULL);
-	checkError(err, "Couldn't enqueue write buffer");
-
 	size_t workgroupSize;
+	size_t maxWorkgroupSize;
 	err = clGetKernelWorkGroupInfo(kernel, device_id, CL_KERNEL_WORK_GROUP_SIZE,
-		sizeof(size_t), &workgroupSize, NULL);
+		sizeof(size_t), &maxWorkgroupSize, NULL);
 	checkError(err, "Couldn't get workgroup size");
-	printf("Supported workgroup size: %zu\n", workgroupSize);
+
+	printf("Array size              : %zu\n", arraySize);
+	printf("Max workgroup size      : %zu\n", maxWorkgroupSize);
 	
-	// TODO: Workgroup choice
-	workgroupSize = 256;
-	printf("Using                   : %zu\n", workgroupSize);
+	bool correctWorkgroupSize = false;
+	while (!correctWorkgroupSize) {
+		printf("Choose workgroup size   : ");
+		scanf_s("%zu", &workgroupSize);
+
+		if (workgroupSize > maxWorkgroupSize) {
+			printf("Workgroup size must be <= %zu!\n", maxWorkgroupSize);
+		} 
+		else if (!(arraySize % workgroupSize == 0)) {
+			printf("Array size %% workgroup size must be 0!\n");
+		}
+		else {
+			correctWorkgroupSize = true;
+		}
+		
+	}
+	printf("Using workgroup size    : %zu\n", workgroupSize);
 
 	/* Set OpenCL kernel arguments */
 	err = clSetKernelArg(kernel, 0, sizeof(cl_mem), (void *)&cl_gdata);
@@ -141,7 +206,7 @@ int main() {
 	/* CPU work / calculate reference */
 	QueryPerformanceCounter(&start_cpu);
 	long long int reference = 0;
-	for (int i = 0; i < ARRAYSIZE; i++) {
+	for (int i = 0; i < arraySize; i++) {
 		reference += inputArray[i];
 	}
 	QueryPerformanceCounter(&end_cpu);
@@ -150,27 +215,46 @@ int main() {
 
 
 	/* GPU work */
-	size_t globalSize[1] = { ARRAYSIZE };
+	size_t globalSize[1] = { arraySize };
 	size_t localSize[1] = { workgroupSize };
 
 	cl_event timingEvent;
 	cl_ulong clStartTime, clEndTime;
+
+	unsigned int iterations = 0;
+
+	double elapsed = 0;
+
 	while (globalSize[0] >= localSize[0] && localSize[0] > 1) {
+		printf("Iteration %d: Problems: %d Workgroup sz: %d\n", iterations, globalSize[0], localSize[0]);
 
 		err = clEnqueueNDRangeKernel(command_queue, kernel, 1, NULL,
 			globalSize, localSize, 0, NULL, &timingEvent);
+		checkError(err, "Couldn't enqueue command queue");
+		clFinish(command_queue);
+
+		err = clGetEventProfilingInfo(timingEvent, CL_PROFILING_COMMAND_START, sizeof(cl_ulong), &clStartTime, NULL);
+		checkError(err, "Couldn't get start time");
+		err = clGetEventProfilingInfo(timingEvent, CL_PROFILING_COMMAND_END, sizeof(cl_ulong), &clEndTime, NULL);
+		checkError(err, "Couldn't get end time");
+		elapsed += (clEndTime - clStartTime);
 
 		globalSize[0] /= localSize[0];
 		if (globalSize[0] < localSize[0]) {
 			localSize[0] = globalSize[0];
-		}	
+		}
+		iterations++;
 	}
 
+	printf("Kernel called %d times.\n",iterations);
 
-	clFinish(command_queue);
 
 	err = clEnqueueReadBuffer(command_queue, cl_gdata, CL_TRUE, 0, 
-		sizeof(result), result, 0, NULL, &timingEvent);
+		sizeof(int) * arraySize, result, 0, NULL, &timingEvent);
+
+	printf("GPU time  :    %f msec\n", elapsed / 1000000.0f);
+	printf("GPU Result:    %d\n", result[0]);
+
 
 	clFlush(command_queue);
 	clFinish(command_queue);
@@ -179,15 +263,15 @@ int main() {
 	clReleaseMemObject(cl_gdata);
 	clReleaseCommandQueue(command_queue);
 	clReleaseContext(context);
-	
-	clGetEventProfilingInfo(timingEvent, CL_PROFILING_COMMAND_START, sizeof(cl_ulong), &clStartTime, NULL);
-	clGetEventProfilingInfo(timingEvent, CL_PROFILING_COMMAND_END, sizeof(cl_ulong), &clEndTime, NULL);
-	printf("GPU time  :    %llu msec\n", (clEndTime - clStartTime)/1000000);
-	printf("GPU Result:    %d\n", result[0]);
 
+	delete[] platforms;
+	delete[] deviceInfo;
+	delete[] inputArray;
+	delete[] result;
+		   
 	printf("Press RETURN to exit\n");
 	char ch;
-	scanf_s("%c", &ch);
+	scanf("%c", &ch);
 	getchar();
 
 	return 0;
