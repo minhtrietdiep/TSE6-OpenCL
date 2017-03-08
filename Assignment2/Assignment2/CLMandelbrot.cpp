@@ -108,12 +108,12 @@ int main()
 	cl_int err;
 
 	/* Get platform count */
-	err = clGetPlatformIDs(0, NULL, &platformCount);
+	err = clGetPlatformIDs(0, NULL, &ret_num_platforms);
 	checkError(err, "Couldn't get platform count");
 	
 	/* Get Platform/Device Information */
-	platforms = (cl_platform_id*)malloc(sizeof(cl_platform_id) * platformCount);
-	err = clGetPlatformIDs(platformCount, platforms, &ret_num_platforms);
+	platforms = (cl_platform_id*)malloc(sizeof(cl_platform_id) * ret_num_platforms);
+	err = clGetPlatformIDs(ret_num_platforms, platforms, &ret_num_platforms);
 	checkError(err, "Couldn't get platform IDs");
 
 	unsigned int plat_id;
@@ -198,31 +198,7 @@ int main()
 	QueryPerformanceCounter(&end_copy);
 
 	/* Verify kernel */
-	build_program(context, device_id, FILENAME);
-
-	/* Do the kernel open thing */
-
-	FILE *fp;
-	const char fileName[] = FILENAME;
-	size_t source_size;
-	char *source_str;
-
-	/* Load kernel source file */
-	fp = fopen(fileName, "r");
-	if (!fp) {
-		fprintf(stderr, "Failed to load kernel.\n");
-		exit(1);
-	}
-	source_str = (char *)malloc(MAX_SOURCE_SIZE);
-	source_size = fread(source_str, 1, MAX_SOURCE_SIZE, fp);
-	fclose(fp);
-
-	/* Create kernel program from source file*/
-	program = clCreateProgramWithSource(context, 1, (const char **)&source_str, (const size_t *)&source_size, &err);
-	checkError(err, "Couldn't create kernel program from source");
-
-	err = clBuildProgram(program, 1, &device_id, NULL, NULL, NULL);
-	checkError(err, "Couldn't build kernel program");
+	program = build_program(context, device_id, FILENAME);
 
 	/* Create OpenCL kernel*/
 	kernel = clCreateKernel(program, KERNELNAME, &err);
