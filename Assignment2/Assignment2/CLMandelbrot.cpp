@@ -66,7 +66,6 @@ void create_colortable()
 
 int main()
 {
-	/* Mandelbrot init stuff */
 	remove("fractal_output.bmp");
 
 	// Create the colortable and fill it with colors
@@ -76,78 +75,73 @@ int main()
 	bitmap_image image(window_width, window_height);
 	mandelbrot_color * framebuffer = (mandelbrot_color *)image.data();
 
-	printf("Please choose calculation device:\n[0] CPU\n[1] GPU\n");
-	int dev_choice = -1;
-	scanf("%d", &dev_choice);
-	auto cl_dev_type = (dev_choice == 0 ? CL_DEVICE_TYPE_CPU : CL_DEVICE_TYPE_GPU);
-
-	if (dev_choice < 0 || dev_choice > 1)
-	{
-		printf("Invalid CPU/GPU choice, defaulting to GPU");
-	}
-
-	if (cl_dev_type == CL_DEVICE_TYPE_GPU)
-	{
-		getPlatforms();
-	}
-
-	/* Stuff for OpenCL variable inits */
-
+	/* Init OpenCL variables */
 	cl_platform_id *platforms;
 	cl_device_id device_id = NULL;
 	cl_context context = NULL;
 	cl_command_queue command_queue = NULL;
 
-	cl_mem returnObj = NULL;
-
 	cl_program program = NULL;
 	cl_kernel kernel = NULL;
 	cl_uint ret_num_devices;
 	cl_uint ret_num_platforms;
-	cl_uint platformCount;
 	cl_int err;
 
-	/* Get platform count */
-	err = clGetPlatformIDs(0, NULL, &ret_num_platforms);
-	checkError(err, "Couldn't get platform count");
-	
+	/* Init rest of variables */
+	int devChoice = -1;
+	LARGE_INTEGER freq, start_fractal, start_copy, end_fractal, end_read, end_copy;
+	QueryPerformanceFrequency(&freq);
+
+	int platformChoice = -1;
+	char *deviceInfo;
+	size_t deviceInfoSize;
+
+	/* CPU/GPU choice */
+	printf("Please choose a calculation device:\n[0] CPU\n[1] GPU\n");
+	scanf_s("%d", &devChoice);
+	auto cl_dev_type = (devChoice == 0 ? CL_DEVICE_TYPE_CPU : CL_DEVICE_TYPE_GPU);
+
+	if (devChoice < 0 || devChoice > 1) {
+		printf("Invalid CPU/GPU choice, defaulting to GPU");
+	}
+
 	/* Get Platform/Device Information */
-	platforms = (cl_platform_id*)malloc(sizeof(cl_platform_id) * ret_num_platforms);
-	err = clGetPlatformIDs(ret_num_platforms, platforms, &ret_num_platforms);
-	checkError(err, "Couldn't get platform IDs");
+	err = clGetPlatformIDs(0, 0, &ret_num_platforms);
+	checkError(err, "Couldn't get platform count");
 
-	unsigned int plat_id;
-
+	/* GPU Platform choice */
 	if (cl_dev_type == CL_DEVICE_TYPE_GPU) {
+		getPlatforms();
 		printf("Select platform\n");
-		scanf("%d", &plat_id);
-		if (plat_id >= ret_num_platforms)
-		{
-			plat_id = 0;
+		scanf_s("%d", &platformChoice);
+		if (platformChoice >= ret_num_platforms) {
+			platformChoice = 0;
 			printf("Invalid index, selecting 0\n");
 		}
 
-	} 
-	else {
-		plat_id = 0;
 	}
-	
-	cl_platform_id platform_id = platforms[plat_id];
+	else {
+		platformChoice = 0;
+	}
 
-	err = clGetDeviceIDs(platform_id, cl_dev_type, 1, &device_id, &ret_num_devices);
+	platforms = new cl_platform_id[ret_num_platforms];
+	err = clGetPlatformIDs(ret_num_platforms, platforms, &ret_num_platforms);
+	checkError(err, "Couldn't get platform IDs");
+	err = clGetDeviceIDs(platforms[platformChoice], cl_dev_type, 1, &device_id, &ret_num_devices);
 	checkError(err, "Couldn't get device IDs");
-
-	char dev_info_buff[10240];
-	err = clGetDeviceInfo(device_id, CL_DEVICE_NAME, sizeof(dev_info_buff), dev_info_buff, NULL);
+	err = clGetDeviceInfo(device_id, CL_DEVICE_NAME, 0, NULL, &deviceInfoSize);
+	checkError(err, "Couldn't get device info size");
+	deviceInfo = new char[deviceInfoSize];
+	err = clGetDeviceInfo(device_id, CL_DEVICE_NAME, deviceInfoSize, deviceInfo, NULL);
 	checkError(err, "Couldn't get device info");
-	printf("Using device %s\n", dev_info_buff);
-	
+	printf("Using device %s\n", deviceInfo);
+
 	/* Create OpenCL Context */
 	context = clCreateContext(NULL, 1, &device_id, NULL, NULL, &err);
 	checkError(err, "Couldn't create OpenCL context");
 
 	/*Create command queue */
-	command_queue = clCreateCommandQueue(context, device_id, 0, &err);
+	command_queue = clCreateCommandQueue(context, device_id, CL_QUEUE_PROFILING_ENABLE, &err);
 	checkError(err, "Couldn't create command queue");
 
 	/*Create Buffer Object */
@@ -171,7 +165,6 @@ int main()
 		COLORTABLE_SIZE * sizeof(mandelbrot_color), NULL, &err);
 	checkError(err, "Couldn't create colortable on device");
 
-	LARGE_INTEGER freq, start_fractal, start_copy, end_fractal, end_read, end_copy;
 	QueryPerformanceFrequency(&freq);
 	QueryPerformanceCounter(&start_copy);
 
@@ -232,14 +225,24 @@ int main()
 	err = clSetKernelArg(kernel, 4, sizeof(cl_mem), (void *)&cl_framebuffer);
 	checkError(err, "Couldn't set kernel argument");
 
-	// Kernel stuff's done :)
+
+	cl_event timingEvent;
+	cl_ulong clStartTime, clEndTime;
+
+	double elapsed = 0;
 
 	// Get current time before calculating the fractal
 	QueryPerformanceCounter(&start_fractal);
-	err = clEnqueueNDRangeKernel(command_queue, kernel, 2, NULL, global_item_size, local_item_size, 0, NULL, NULL);
+	err = clEnqueueNDRangeKernel(command_queue, kernel, 2, NULL, global_item_size, local_item_size, 0, NULL, &timingEvent);
 	clFinish(command_queue);
 	QueryPerformanceCounter(&end_fractal);
 	checkError(err, "EnqueueNDRangeKernel error");
+
+	err = clGetEventProfilingInfo(timingEvent, CL_PROFILING_COMMAND_START, sizeof(cl_ulong), &clStartTime, NULL);
+	checkError(err, "Couldn't get start time");
+	err = clGetEventProfilingInfo(timingEvent, CL_PROFILING_COMMAND_END, sizeof(cl_ulong), &clEndTime, NULL);
+	checkError(err, "Couldn't get end time");
+	elapsed += (clEndTime - clStartTime);
 
 	err = clEnqueueReadBuffer(command_queue, cl_framebuffer, CL_TRUE, 0, sizeof(mandelbrot_color) * window_width * window_height, framebuffer, 0, NULL, NULL);
 	checkError(err, "Couldn't read result");
@@ -247,8 +250,8 @@ int main()
 	QueryPerformanceCounter(&end_read);
 	
 	printf("Copy to: %f msec\n", (double)(end_copy.QuadPart - start_copy.QuadPart) / freq.QuadPart * 1000.0);
-	printf("Fractal: %f msec\n", (double)(end_fractal.QuadPart - start_fractal.QuadPart) / freq.QuadPart * 1000.0);
-	printf("F+Read : %f msec\n", (double)(end_read.QuadPart - start_fractal.QuadPart) / freq.QuadPart * 1000.0);
+	printf("Kernel : %f msec\n", elapsed / 1000000.0f);
+	printf("K+Read : %f msec\n", (double)(end_read.QuadPart - start_fractal.QuadPart) / freq.QuadPart * 1000.0);
 
 	printf("Press RETURN to show result\n");
 	char ch;
