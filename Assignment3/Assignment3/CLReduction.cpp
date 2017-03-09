@@ -14,10 +14,27 @@
 #include <algorithm>
 #include <ctime>
 
+//http://stackoverflow.com/questions/1640258/need-a-fast-random-generator-for-c
+static unsigned long x = 123456789, y = 362436069, z = 521288629;
+unsigned long xorshf96(void) {          //period 2^96-1
+	unsigned long t;
+	x ^= x << 16;
+	x ^= x >> 5;
+	x ^= x << 1;
+
+	t = x;
+	x = y;
+	y = z;
+	z = t ^ x ^ y;
+
+	return z;
+}
+
 bool isPow2(unsigned long long int x) {
 	return (x != 0) && ((x & (x - 1)) == 0);
 }
 
+//2x faster
 //http://graphics.stanford.edu/~seander/bithacks.html#RoundUpPowerOf2
 unsigned long long roundUpPow2(unsigned long long v) {
 	v--;
@@ -38,9 +55,9 @@ int main() {
 
 	bool acceptableSize = false;
 	while (!acceptableSize) {
-		scanf_s("%d", &arraySizeContent);
-		if (arraySizeContent > 1024 * 1024 * 128) {
-			printf("Easy there m8\n");
+		scanf_s("%zu", &arraySizeContent);
+		if (arraySizeContent > 1024 * 1024 * 2048) {
+			printf("Easy there dude\n");
 		} else {
 			acceptableSize = true;
 		}
@@ -73,8 +90,8 @@ int main() {
 	char *deviceInfo;
 	size_t deviceInfoSize;
 
-	char fileName[] = "./kernel1.cl";
-	char kernelName[] = "kernel1";
+	char fileName[128]; //= "./kernel1.cl";
+	char kernelName[128]; //= "kernel1";
 
 	/* CPU/GPU choice */
 	printf("Please choose a calculation device:\n[0] CPU\n[1] GPU\n");
@@ -137,7 +154,7 @@ int main() {
 	int *inputArray = new int[arraySize];
 	int *result = new int[arraySize];
 	
-	srand(time(NULL));
+	//srand(time(NULL));
 	int min = -100;
 	int max = 100;
 
@@ -145,9 +162,15 @@ int main() {
 	for (int i = 0; i < arraySize; i++)
 	{
 		if (i < arraySizeContent)
-			inputArray[i] = rand() % (max - min + 1) + min;
+		{
+			//inputArray[i] = rand() % (max - min + 1) + min;
+			inputArray[i] = xorshf96() % (max - min + 1) + min;
+		}
 		else
+		{
 			inputArray[i] = 0;
+		}
+			
 	}
 	QueryPerformanceCounter(&end_generate);
 	printf("Generate  :    %f msec\n", (double)(end_generate.QuadPart - start_generate.QuadPart) / freq.QuadPart * 1000.0);
@@ -160,8 +183,18 @@ int main() {
 	err = clEnqueueWriteBuffer(command_queue, cl_gdata, CL_TRUE, 0, sizeof(int) * arraySize, inputArray, 0, NULL, NULL);
 	checkError(err, "Couldn't enqueue write buffer");
 
-	/* TODO: Kernel selection */
-	// TODO: CODE
+	/* Kernel choice */
+	printf("Choose kernel 1, 2, or 3\n");
+	int kernelChoice = -1;
+	while (kernelChoice != 1 && kernelChoice != 2 && kernelChoice != 3) {
+		scanf_s("%d", &kernelChoice);
+		if (kernelChoice != 1 && kernelChoice != 2 && kernelChoice != 3) {
+			printf("Invalid selection\n");
+		}
+	}
+
+	snprintf(fileName, sizeof(fileName), "./kernel%d.cl", kernelChoice);
+	snprintf(kernelName, sizeof(kernelName), "kernel%d", kernelChoice);
 
 	/* Create kernel */
 	program = build_program(context, device_id, fileName);
@@ -240,9 +273,15 @@ int main() {
 		elapsed += (clEndTime - clStartTime);
 
 		globalSize[0] /= localSize[0];
+		if (kernelChoice == 3) {
+			globalSize[0] /= 2;
+		}
+
 		if (globalSize[0] < localSize[0]) {
 			localSize[0] = globalSize[0];
 		}
+		printf("Iteration %d: Problems: %d Workgroup sz: %d\n", iterations, globalSize[0], localSize[0]);
+
 		iterations++;
 	}
 
@@ -252,7 +291,7 @@ int main() {
 	err = clEnqueueReadBuffer(command_queue, cl_gdata, CL_TRUE, 0, 
 		sizeof(int) * arraySize, result, 0, NULL, &timingEvent);
 
-	printf("GPU time  :    %f msec\n", elapsed / 1000000.0f);
+	printf("Kernel time:   %f msec\n", elapsed / 1000000.0f);
 	printf("GPU Result:    %d\n", result[0]);
 
 
