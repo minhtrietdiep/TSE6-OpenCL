@@ -49,6 +49,7 @@ unsigned long long roundUpPow2(unsigned long long v) {
 }
 
 int main() {
+	unsigned long long int maxArraySize = 1024*1024*128;
 	size_t arraySizeContent = 1024;
 
 	printf("Choose array size: \n");
@@ -56,7 +57,7 @@ int main() {
 	bool acceptableSize = false;
 	while (!acceptableSize) {
 		scanf_s("%zu", &arraySizeContent);
-		if (arraySizeContent > 1024 * 1024 * 2048) {
+		if (arraySizeContent > maxArraySize) {
 			printf("Easy there dude\n");
 		} else {
 			acceptableSize = true;
@@ -69,10 +70,10 @@ int main() {
 	/* Init OpenCL variables */
 	cl_platform_id *platforms;
 	cl_device_id device_id = NULL;
-	cl_context context = NULL;
-	cl_command_queue command_queue = NULL;
-	cl_program program = NULL;
-	cl_kernel kernel = NULL;
+	cl_context context;
+	cl_command_queue command_queue;
+	cl_program program;
+	cl_kernel kernel;
 	cl_uint ret_num_devices;
 	cl_uint ret_num_platforms;
 	cl_int err;
@@ -259,7 +260,7 @@ int main() {
 	double elapsed = 0;
 
 	while (globalSize[0] >= localSize[0] && localSize[0] > 1) {
-		printf("Iteration %d: Problems: %d Workgroup sz: %d\n", iterations, globalSize[0], localSize[0]);
+		printf("Iteration %d: Problems: %llu Workgroup sz: %llu\n", iterations, globalSize[0], localSize[0]);
 
 		err = clEnqueueNDRangeKernel(command_queue, kernel, 1, NULL,
 			globalSize, localSize, 0, NULL, &timingEvent);
@@ -280,7 +281,7 @@ int main() {
 		if (globalSize[0] < localSize[0]) {
 			localSize[0] = globalSize[0];
 		}
-		printf("Iteration %d: Problems: %d Workgroup sz: %d\n", iterations, globalSize[0], localSize[0]);
+		//printf("Iteration %d: Problems: %llu Workgroup sz: %llu\n", iterations, globalSize[0], localSize[0]);
 
 		iterations++;
 	}
@@ -310,7 +311,7 @@ int main() {
 		   
 	printf("Press RETURN to exit\n");
 	char ch;
-	scanf("%c", &ch);
+	scanf_s("%c", &ch);
 	getchar();
 
 	return 0;
