@@ -237,8 +237,10 @@ cl_program build_program(cl_context context, cl_device_id device, const char* fi
 		clGetProgramBuildInfo(program, device, CL_PROGRAM_BUILD_LOG, 
 			log_size + 1, program_log, NULL);
 		printf("%s\n", program_log);
+		getchar();
+		getchar();
 		free(program_log);
-		getchar();exit(1);
+		exit(1);
 	}
 
 	return program;

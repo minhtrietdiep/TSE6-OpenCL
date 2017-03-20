@@ -16,19 +16,19 @@
 #include "color_table.h"
 #include "OpenGL_functions.h"
 
-const unsigned int MAX_SOURCE_SIZE = (0x100000);	
+const unsigned int MAX_SOURCE_SIZE = (0x100000);
 const unsigned int window_width = 800;
 const unsigned int window_height = 600;
 
-const unsigned int OFFSET_X = 0;
-const unsigned int OFFSET_Y = 0;
-const unsigned int ZOOMFACTOR = 200;
+float OFFSET_X = 0;
+float OFFSET_Y = 0;
+const unsigned int ZOOMFACTOR = 100;
 const unsigned int MAX_ITERATIONS = 1024;
 const unsigned int COLORTABLE_SIZE = 1024;
 
 float stepsize = 1.0f / ZOOMFACTOR;
 
-mandelbrot_color colortable2[COLORTABLE_SIZE];
+mandelbrot_color colortable[COLORTABLE_SIZE];
 
 #define FILENAME "./KernelMandelbrot.cl"
 #define KERNELNAME "mandelbrot_frame"
@@ -46,96 +46,137 @@ cl_kernel kernel = NULL;
 cl_uint ret_num_devices;
 cl_uint ret_num_platforms;
 cl_int err;
-cl_mem cl_stepsize;
 
 size_t global_item_size[2];
 size_t local_item_size[2];
 
+GLuint gl_tex;
+cl_mem cl_tex = NULL;
+cl_mem cl_stepsize = NULL;
+
+cl_mem cl_offset_x = NULL;
+cl_mem cl_offset_y = NULL;
+cl_mem cl_maxiterations = NULL;
+cl_mem cl_window_width = NULL;
+cl_mem cl_window_height = NULL;
+cl_mem cl_colortable = NULL;
+
+unsigned long long curr, prev;
+float walksize = 0.1;
+int runs = 0;
+
+void handle_keys(unsigned char key, int x, int y) {
+	switch(key) {
+	case 'q':
+		stepsize *= 0.95;
+		break;
+	case 'e':
+		stepsize *= 1.05;
+		break;
+	case 'w':
+		OFFSET_Y -= walksize * stepsize*200;
+		break;
+	case 'a':
+		OFFSET_X += walksize * stepsize * 200;
+		break;
+	case 's':
+		OFFSET_Y += walksize * stepsize * 200;
+		break;
+	case 'd':
+		OFFSET_X -= walksize * stepsize * 200;
+		break;
+	}
+}
+
 void display() {
-	glBegin(GL_QUADS);
-	glTexCoord2f(0.0f, 0.0f);
-	glVertex3f(-1.0f, -1.0f, 0.1f);
-	glTexCoord2f(1.0f, 0.0f);
-	glVertex3f(1.0f, -1.0f, 0.1f);
-	glTexCoord2f(1.0f, 1.0f);
-	glVertex3f(1.0f, 1.0f, 0.1f);
-	glTexCoord2f(0.0f, 1.0f);
-	glVertex3f(-1.0f, 1.0f, 0.1f);
-	glEnd();
+	glFinish();
+	printf("Frame %d\n", runs);
+	runs++;
 
-	clSetKernelArg(kernel, 4, sizeof(cl_mem), NULL);
-
-	//err = clEnqueueWriteBuffer(command_queue, cl_stepsize, CL_TRUE, 0, sizeof(float), (void *)&stepsize, 0, NULL, NULL);
-	//checkError(err, "Couldn't enqueue write buffer");
-
-	//err = clSetKernelArg(kernel, 2, sizeof(cl_mem), (void *)&cl_stepsize);
-	//checkError(err, "Couldn't set kernel argument");
-	//auto tex_width = window_width;
-	//auto tex_height = window_height;
-	//glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, tex_width, tex_height, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
-	//GLuint texture;
-	//glGenTextures(1, &texture);
-	//glBindTexture(GL_TEXTURE_2D, texture);
-
-	//cl_mem cl_tex = clCreateFromGLTexture2D(context, CL_MEM_WRITE_ONLY, GL_TEXTURE_2D, 0, texture, &err);
-	//// Acquire OpenCL access to the texture   
-	//clEnqueueAcquireGLObjects(command_queue, 1, &cl_tex, 0, NULL, NULL);
-
-	//clSetKernelArg(kernel, 8, sizeof(cl_mem), (void *)&cl_tex);
-	//cl_int err = clEnqueueNDRangeKernel(command_queue, kernel, 2, NULL, global_item_size, local_item_size, 0, NULL, NULL);
-	//checkError(err, "EnqueueNDRangeKernel error");
-
-	//// Give the texture back to OpenGL
-	//clEnqueueReleaseGLObjects(command_queue, 1, &cl_tex, 0, NULL, NULL);
-
-	////Wait until object is actually released by OpenCL
-	//clFinish(command_queue);
+	//curr = glutGet(GLUT_ELAPSED_TIME);
+	//stepsize = stepsize * 0.99;// (float)pow(.95, (curr - prev) / 100.0);
+	//prev = curr;
 	
-	draw_quad();
 
+
+	err = clEnqueueWriteBuffer(command_queue, cl_offset_x, CL_TRUE, 0, sizeof(float), &OFFSET_X, 0, NULL, NULL);
+	checkError(err, "Couldn't enqueue off_x");
+	err = clEnqueueWriteBuffer(command_queue, cl_offset_y, CL_TRUE, 0, sizeof(float), &OFFSET_Y, 0, NULL, NULL);
+	checkError(err, "Couldn't enqueue off_y");
+	err = clEnqueueWriteBuffer(command_queue, cl_stepsize, CL_TRUE, 0, sizeof(float), &stepsize, 0, NULL, NULL);
+	checkError(err, "Couldn't write step size");
+
+	// Acquire OpenCL access to the texture   
+	err = clEnqueueAcquireGLObjects(command_queue, 1, &cl_tex, 0, NULL, NULL);
+	checkError(err, "Couldn't acquire OpenCL access to the texture");
+
+	// set args
+	err = clSetKernelArg(kernel, 0, sizeof(cl_mem), &cl_offset_x);
+	checkError(err, "Couldn't set kernel argument");
+	err = clSetKernelArg(kernel, 1, sizeof(cl_mem), &cl_offset_y);
+	checkError(err, "Couldn't set kernel argument");
+	err = clSetKernelArg(kernel, 2, sizeof(cl_mem), &cl_stepsize);
+	checkError(err, "Couldn't set step size");
+	err = clSetKernelArg(kernel, 3, sizeof(cl_mem), &cl_maxiterations);
+	checkError(err, "Couldn't set kernel argument");
+	err = clSetKernelArg(kernel, 4, sizeof(cl_mem), &cl_tex);
+	checkError(err, "Couldn't set kernel argument");
+	err = clSetKernelArg(kernel, 5, sizeof(cl_mem), &cl_colortable);
+	checkError(err, "Couldn't set kernel argument");
+	err = clSetKernelArg(kernel, 6, sizeof(cl_mem), &cl_window_width);
+	checkError(err, "Couldn't set kernel argument");
+	err = clSetKernelArg(kernel, 7, sizeof(cl_mem), &cl_window_height);
+	checkError(err, "Couldn't set kernel argument");
+
+	global_item_size[0] = window_width;
+	global_item_size[1] = window_height;
+	// How to find optimal size? 25*30 or 40*20 is slow for example, while that
+	// is the closest to the reported 1024 reported work group size (GT630M)
+	local_item_size[0] = 25;
+	local_item_size[1] = 20;
+
+	// OpenCL Kernel is started
+	cl_int err = clEnqueueNDRangeKernel(command_queue, kernel, 2, NULL, global_item_size, local_item_size, 0, NULL, NULL);
+	checkError(err, "clEnqueueNDRangeKernel error");
+	clFinish(command_queue);
+
+	// Give the texture back to OpenGL from OpenCL
+	clEnqueueReleaseGLObjects(command_queue, 1, &cl_tex, 0, NULL, NULL);
+	checkError(err, "clEnqueueReleaseGLObjects error");
+
+	//Wait until object is actually released by OpenCL
+	clFinish(command_queue);
+	
 	// Draw quad, with the texture mapped on it in OPENGL
-	//......
+	draw_quad();
 
 	// Request another redisplay of the window
 	glutPostRedisplay();
 }
 
-
-//int main(int argc, char** argv) {
-//	glutInit(&argc, argv);
-//	//glutInitDisplayMode(GLUT_SINGLE);
-//	glutInitWindowSize(300, 300);
-//	//glutInitWindowPosition(100, 100);
-//	glutCreateWindow("Hello world");
-//	glutDisplayFunc(display);
-//	glutMainLoop();
-//	return 0;
-//}
-
-
-int main()
+int main(int argc, char **argv)
 {
 	init_gl(window_width, window_height);
 
 	// Create the colortable and fill it with colors
-	create_colortable(colortable2, COLORTABLE_SIZE);
+	create_colortable(colortable, COLORTABLE_SIZE);
 
-	// Create an empty image
-	mandelbrot_color * framebuffer = (mandelbrot_color *)(window_width * window_height);
+	glutInit(&argc, argv);
+	glutInitWindowSize(window_width, window_height);
+	glutInitWindowPosition(100, 100);
+	glutCreateWindow("GLCLMandelBrot");
 
 	/* Init rest of variables */
+	//LARGE_INTEGER freq, start_fractal, start_copy, end_fractal, end_read, end_copy;
+	//QueryPerformanceFrequency(&freq);
 	int devChoice = -1;
-	LARGE_INTEGER freq, start_fractal, start_copy, end_fractal, end_read, end_copy;
-	QueryPerformanceFrequency(&freq);
-
 	int platformChoice = -1;
 	char *deviceInfo;
 	size_t deviceInfoSize;
 
 	/* CPU/GPU choice */
 	printf("Please choose a calculation device:\n[0] CPU\n[1] GPU\n");
-	//scanf_s("%d", &devChoice);
-	devChoice = 1;
+	scanf_s("%d", &devChoice);
 	auto cl_dev_type = (devChoice == 0 ? CL_DEVICE_TYPE_CPU : CL_DEVICE_TYPE_GPU);
 
 	if (devChoice < 0 || devChoice > 1) {
@@ -150,9 +191,8 @@ int main()
 	if (cl_dev_type == CL_DEVICE_TYPE_GPU) {
 		getPlatforms();
 		printf("Select platform\n");
-		//scanf_s("%d", &platformChoice);
-		platformChoice = 1;
-		if (platformChoice >= ret_num_platforms) {
+		scanf_s("%d", &platformChoice);
+		if (platformChoice >= (int)ret_num_platforms) {
 			platformChoice = 0;
 			printf("Invalid index, selecting 0\n");
 		}
@@ -175,94 +215,67 @@ int main()
 	printf("Using device %s\n", deviceInfo);
 
 	/* Create OpenCL Context */
-	context = clCreateContext(NULL, 1, &device_id, NULL, NULL, &err);
+	cl_context_properties properties[] = {
+		CL_GL_CONTEXT_KHR, reinterpret_cast<cl_context_properties>(wglGetCurrentContext()),
+		CL_WGL_HDC_KHR, reinterpret_cast<cl_context_properties>(wglGetCurrentDC()),
+		0
+	};
+
+	context = clCreateContext(properties, 1, &device_id, NULL, NULL, &err);
 	checkError(err, "Couldn't create OpenCL context");
 
 	/*Create command queue */
-	command_queue = clCreateCommandQueue(context, device_id, CL_QUEUE_PROFILING_ENABLE, &err);
+	command_queue = clCreateCommandQueue(context, device_id, NULL, &err);
 	checkError(err, "Couldn't create command queue");
 
-	/*Create Buffer Object */
-	cl_mem cl_offset_x		= clCreateBuffer(context, CL_MEM_READ_WRITE, sizeof(float), NULL, &err);
+	/*Create Buffer Objects */
+	cl_offset_x		= clCreateBuffer(context, CL_MEM_READ_ONLY, sizeof(float), NULL, &err);
 	checkError(err, "Couldn't create buffer");
-	cl_mem cl_offset_y		= clCreateBuffer(context, CL_MEM_READ_WRITE, sizeof(float), NULL, &err);
+	cl_offset_y		= clCreateBuffer(context, CL_MEM_READ_ONLY, sizeof(float), NULL, &err);
 	checkError(err, "Couldn't create buffer");
-	/*cl_mem */cl_stepsize		= clCreateBuffer(context, CL_MEM_READ_WRITE, sizeof(float), NULL, &err);
+	cl_stepsize		= clCreateBuffer(context, CL_MEM_READ_ONLY, sizeof(float), NULL, &err);
 	checkError(err, "Couldn't create buffer");
-	cl_mem cl_maxiterations = clCreateBuffer(context, CL_MEM_READ_WRITE, sizeof(unsigned int), NULL, &err);
+	cl_maxiterations	= clCreateBuffer(context, CL_MEM_READ_ONLY, sizeof(unsigned int), NULL, &err);
 	checkError(err, "Couldn't create buffer");
-	cl_mem cl_framebuffer	= clCreateBuffer(context, CL_MEM_READ_WRITE, sizeof(mandelbrot_color) * window_width * window_height, NULL, &err);
+	cl_window_width		= clCreateBuffer(context, CL_MEM_READ_ONLY, sizeof(unsigned int), NULL, &err);
 	checkError(err, "Couldn't create buffer");
-	cl_mem cl_window_width	= clCreateBuffer(context, CL_MEM_READ_WRITE, sizeof(unsigned int), NULL, &err);
-	checkError(err, "Couldn't create buffer");
-	cl_mem cl_window_height	= clCreateBuffer(context, CL_MEM_READ_WRITE, sizeof(unsigned int), NULL, &err);
+	cl_window_height	= clCreateBuffer(context, CL_MEM_READ_ONLY, sizeof(unsigned int), NULL, &err);
 	checkError(err, "Couldn't create buffer");
 
 	// Create new table on device
-	cl_mem dev_colortable = clCreateBuffer(context, CL_MEM_READ_ONLY,
+	cl_colortable = clCreateBuffer(context, CL_MEM_READ_ONLY,
 		COLORTABLE_SIZE * sizeof(mandelbrot_color), NULL, &err);
 	checkError(err, "Couldn't create colortable on device");
 
-	QueryPerformanceFrequency(&freq);
-	QueryPerformanceCounter(&start_copy);
-
 	/* Copy input data to the memory buffer */
-	err = clEnqueueWriteBuffer(command_queue, cl_offset_x, CL_TRUE, 0, sizeof(float), (void *)&OFFSET_X, 0, NULL, NULL);
-	checkError(err, "Couldn't enqueue write buffer");
-	err = clEnqueueWriteBuffer(command_queue, cl_offset_y, CL_TRUE, 0, sizeof(float), (void *)&OFFSET_Y, 0, NULL, NULL);
-	checkError(err, "Couldn't enqueue write buffer");
-
-	err = clEnqueueWriteBuffer(command_queue, cl_maxiterations, CL_TRUE, 0, sizeof(unsigned int), (void *)&MAX_ITERATIONS, 0, NULL, NULL);
-	checkError(err, "Couldn't enqueue write buffer");
-	err = clEnqueueWriteBuffer(command_queue, cl_window_width, CL_TRUE, 0, sizeof(unsigned int), (void *)&window_width, 0, NULL, NULL);
-	checkError(err, "Couldn't enqueue write buffer");
-	err = clEnqueueWriteBuffer(command_queue, cl_window_height, CL_TRUE, 0, sizeof(unsigned int), (void *)&window_height, 0, NULL, NULL);
-	checkError(err, "Couldn't enqueue write buffer");
-
-	// Write the color table data to the device
-	err = clEnqueueWriteBuffer(command_queue, dev_colortable, CL_TRUE, 0,
-		COLORTABLE_SIZE * sizeof(mandelbrot_color),
-		colortable2, 0, NULL, NULL);
+	err = clEnqueueWriteBuffer(command_queue, cl_offset_x, CL_TRUE, 0, sizeof(float), &OFFSET_X, 0, NULL, NULL);
+	checkError(err, "Couldn't enqueue off_x");
+	err = clEnqueueWriteBuffer(command_queue, cl_offset_y, CL_TRUE, 0, sizeof(float), &OFFSET_Y, 0, NULL, NULL);
+	checkError(err, "Couldn't enqueue off_y");
+	err = clEnqueueWriteBuffer(command_queue, cl_maxiterations, CL_TRUE, 0, sizeof(unsigned int),&MAX_ITERATIONS, 0, NULL, NULL);
+	checkError(err, "Couldn't enqueue max_it");
+	err = clEnqueueWriteBuffer(command_queue, cl_window_width, CL_TRUE, 0, sizeof(unsigned int), &window_width, 0, NULL, NULL);
+	checkError(err, "Couldn't enqueue window_w");
+	err = clEnqueueWriteBuffer(command_queue, cl_window_height, CL_TRUE, 0, sizeof(unsigned int),&window_height, 0, NULL, NULL);
+	checkError(err, "Couldn't enqueue window_h");
+	err = clEnqueueWriteBuffer(command_queue, cl_colortable, CL_TRUE, 0, COLORTABLE_SIZE * sizeof(mandelbrot_color), colortable, 0, NULL, NULL);
 	checkError(err, "Couldn't write colortable to device");
+	err = clEnqueueWriteBuffer(command_queue, cl_stepsize, CL_TRUE, 0, sizeof(float), &stepsize, 0, NULL, NULL);
+	checkError(err, "Couldn't write step size");
 
-	QueryPerformanceCounter(&end_copy);
-
-	/* Verify kernel */
+	/* Build kernel */
 	program = build_program(context, device_id, FILENAME);
 
 	/* Create OpenCL kernel*/
 	kernel = clCreateKernel(program, KERNELNAME, &err);
 	checkError(err, "Couldn't create kernel");
 
-	err = clSetKernelArg(kernel, 0, sizeof(cl_mem), (void *)&cl_offset_x);
-	checkError(err, "Couldn't set kernel argument");
-	err = clSetKernelArg(kernel, 1, sizeof(cl_mem), (void *)&cl_offset_y);
-	checkError(err, "Couldn't set kernel argument");
-	err = clSetKernelArg(kernel, 3, sizeof(cl_mem), (void *)&cl_maxiterations);
-	checkError(err, "Couldn't set kernel argument");
-	err = clSetKernelArg(kernel, 5, sizeof(cl_mem), (void *)&dev_colortable);
-	checkError(err, "Couldn't set kernel argument");
-	err = clSetKernelArg(kernel, 6, sizeof(cl_mem), (void *)&cl_window_width);
-	checkError(err, "Couldn't set kernel argument");
-	err = clSetKernelArg(kernel, 7, sizeof(cl_mem), (void *)&cl_window_height);
-	checkError(err, "Couldn't set kernel argument");
+	gl_tex = init_gl(window_width, window_height);
+	cl_tex = clCreateFromGLTexture2D(context, CL_MEM_WRITE_ONLY, GL_TEXTURE_2D, 0, gl_tex, &err);
+	checkError(err, "Couldn't create cl_tex");
 
 
-	size_t workgroup_size;
-	clGetKernelWorkGroupInfo(kernel, device_id, CL_KERNEL_WORK_GROUP_SIZE, sizeof(size_t), &workgroup_size, NULL);
-	printf("Workgroup sz: %zu\n", workgroup_size);
-
-	global_item_size[0] = window_width;
-	global_item_size[1] = window_height;
-	// How to find optimal size? 25*30 or 40*20 is slow for example, while that
-	// is the closest to the reported 1024 reported work group size (GT630M)
-	local_item_size[0] = 25;
-	local_item_size[1] = 20;
-
-	err = clSetKernelArg(kernel, 4, sizeof(cl_mem), (void *)&cl_framebuffer);
-	checkError(err, "Couldn't set kernel argument");
-	
-	glutCreateWindow("Hello world");
+	glutKeyboardFunc(handle_keys);
 	glutDisplayFunc(display);
 	glutMainLoop();
 

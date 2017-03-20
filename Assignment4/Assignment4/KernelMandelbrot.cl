@@ -2,15 +2,14 @@ typedef struct {
 	unsigned char blue, green, red;
 } mandelbrot_color; 
 
-__kernel void mandelbrot_frame( __constant float *offset_x,
-								__constant float *offset_y,
-								__constant float *stepsize,
-								__constant unsigned int *max_iterations,
-								__global image2d_t framebuffer,
-								__constant mandelbrot_color *colortable,
-								__constant unsigned int *window_width,
-								__constant unsigned int *window_height,
-								__global unsigned int tex) {
+__kernel void mandelbrot_frame( __global float *offset_x,
+								__global float *offset_y,
+								__global float *stepsize,
+								__global unsigned int *max_iterations,
+								__write_only image2d_t framebuffer,
+								__global mandelbrot_color *colortable,
+								__global unsigned int *window_width,
+								__global unsigned int *window_height) {
 	int windowPosX = get_global_id(0);
 	int windowPosY = get_global_id(1);
 
@@ -44,11 +43,12 @@ __kernel void mandelbrot_frame( __constant float *offset_x,
 
 	// Output black if we never finished, and a color from the look up table otherwise
 	float4 black = { 0.0f, 0.0f, 0.0f, 1.0f };
-	float4 color = float4(colortable[iterations].red / 255.0f,
-		colortable[iterations].green / 255.0f,
-		colortable[iterations].blue / 255.0f,
-		1.0f)
+	float4 color = {	colortable[iterations].red / 255.0f,
+						colortable[iterations].green / 255.0f,
+						colortable[iterations].blue / 255.0f,
+						1.0f };
+	int2 windowPos = { windowPosX, windowPosY };
 	float4 finalcolor =	(iterations == (*max_iterations)) ? black : color;
-	write_imagef(framebuffer, windowPosX, windowPosY, finalcolor);
+	write_imagef(framebuffer, windowPos, finalcolor);
 }
 
