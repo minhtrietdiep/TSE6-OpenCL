@@ -23,8 +23,8 @@ const unsigned int window_height = 600;
 float OFFSET_X = 0;
 float OFFSET_Y = 0;
 const unsigned int ZOOMFACTOR = 100;
-const unsigned int MAX_ITERATIONS = 1024;
-const unsigned int COLORTABLE_SIZE = 1024;
+const unsigned int MAX_ITERATIONS = 512; // because slow laptop :(
+const unsigned int COLORTABLE_SIZE = 2048;
 
 float stepsize = 1.0f / ZOOMFACTOR;
 
@@ -90,8 +90,8 @@ void handle_keys(unsigned char key, int x, int y) {
 
 void display() {
 	glFinish();
-	printf("Frame %d\n", runs);
-	runs++;
+	//printf("Frame %d\n", runs);
+	//runs++;
 
 	//curr = glutGet(GLUT_ELAPSED_TIME);
 	//stepsize = stepsize * 0.99;// (float)pow(.95, (curr - prev) / 100.0);
