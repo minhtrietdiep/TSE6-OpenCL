@@ -1,9 +1,11 @@
+#pragma OPENCL EXTENSION cl_khr_fp64 : enable
+
 typedef struct {
 	unsigned char blue, green, red;
 } mandelbrot_color; 
 
-__kernel void mandelbrot_frame( __global float *offset_x,
-								__global float *offset_y,
+__kernel void mandelbrot_frame( __global double *offset_x,
+								__global double *offset_y,
 								__global float *stepsize,
 								__global unsigned int *max_iterations,
 								__write_only image2d_t framebuffer,
@@ -13,17 +15,17 @@ __kernel void mandelbrot_frame( __global float *offset_x,
 	int windowPosX = get_global_id(0);
 	int windowPosY = get_global_id(1);
 
-	float center_X = -((*stepsize)*(*window_width)  / 2);
-	float center_Y =  ((*stepsize)*(*window_height) / 2);
-	const float stepPosX = center_X - *offset_x + (windowPosX * (*stepsize));
-	const float stepPosY = center_Y + *offset_y - (windowPosY * (*stepsize));
+	double center_X = (double)(-((*stepsize)*(*window_width)  / 2.0));
+	double center_Y = (double)(((*stepsize)*(*window_height) / 2.0));
+	const double stepPosX = (double)(center_X - *offset_x + (windowPosX * (*stepsize)));
+	const double stepPosY = (double)(center_Y + *offset_y - (windowPosY * (*stepsize)));
 
 	// Variables for the calculation
-	float x = 0.0;
-	float y = 0.0;
-	float xSqr = 0.0;
-	float ySqr = 0.0;
-	
+	double x = 0.0;
+	double y = 0.0;
+	double xSqr = 0.0;
+	double ySqr = 0.0;
+
 	unsigned int iterations = 0;
 
 	// Perform up to the maximum number of iterations to solve

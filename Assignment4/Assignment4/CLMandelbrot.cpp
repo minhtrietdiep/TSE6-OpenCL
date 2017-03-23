@@ -20,8 +20,8 @@ const unsigned int MAX_SOURCE_SIZE = (0x100000);
 const unsigned int window_width = 800;
 const unsigned int window_height = 600;
 
-float OFFSET_X = 0;
-float OFFSET_Y = 0;
+double OFFSET_X = 0;
+double OFFSET_Y = 0;
 const unsigned int ZOOMFACTOR = 100;
 const unsigned int MAX_ITERATIONS = 512; // because slow laptop :(
 const unsigned int COLORTABLE_SIZE = 2048;
@@ -62,7 +62,7 @@ cl_mem cl_window_height = NULL;
 cl_mem cl_colortable = NULL;
 
 unsigned long long curr, prev;
-float walksize = 0.1;
+double walksize = 0.1;
 int runs = 0;
 
 void handle_keys(unsigned char key, int x, int y) {
@@ -96,12 +96,10 @@ void display() {
 	//curr = glutGet(GLUT_ELAPSED_TIME);
 	//stepsize = stepsize * 0.99;// (float)pow(.95, (curr - prev) / 100.0);
 	//prev = curr;
-	
 
-
-	err = clEnqueueWriteBuffer(command_queue, cl_offset_x, CL_TRUE, 0, sizeof(float), &OFFSET_X, 0, NULL, NULL);
+	err = clEnqueueWriteBuffer(command_queue, cl_offset_x, CL_TRUE, 0, sizeof(double), &OFFSET_X, 0, NULL, NULL);
 	checkError(err, "Couldn't enqueue off_x");
-	err = clEnqueueWriteBuffer(command_queue, cl_offset_y, CL_TRUE, 0, sizeof(float), &OFFSET_Y, 0, NULL, NULL);
+	err = clEnqueueWriteBuffer(command_queue, cl_offset_y, CL_TRUE, 0, sizeof(double), &OFFSET_Y, 0, NULL, NULL);
 	checkError(err, "Couldn't enqueue off_y");
 	err = clEnqueueWriteBuffer(command_queue, cl_stepsize, CL_TRUE, 0, sizeof(float), &stepsize, 0, NULL, NULL);
 	checkError(err, "Couldn't write step size");
@@ -117,16 +115,6 @@ void display() {
 	checkError(err, "Couldn't set kernel argument");
 	err = clSetKernelArg(kernel, 2, sizeof(cl_mem), &cl_stepsize);
 	checkError(err, "Couldn't set step size");
-	err = clSetKernelArg(kernel, 3, sizeof(cl_mem), &cl_maxiterations);
-	checkError(err, "Couldn't set kernel argument");
-	err = clSetKernelArg(kernel, 4, sizeof(cl_mem), &cl_tex);
-	checkError(err, "Couldn't set kernel argument");
-	err = clSetKernelArg(kernel, 5, sizeof(cl_mem), &cl_colortable);
-	checkError(err, "Couldn't set kernel argument");
-	err = clSetKernelArg(kernel, 6, sizeof(cl_mem), &cl_window_width);
-	checkError(err, "Couldn't set kernel argument");
-	err = clSetKernelArg(kernel, 7, sizeof(cl_mem), &cl_window_height);
-	checkError(err, "Couldn't set kernel argument");
 
 	global_item_size[0] = window_width;
 	global_item_size[1] = window_height;
@@ -229,9 +217,9 @@ int main(int argc, char **argv)
 	checkError(err, "Couldn't create command queue");
 
 	/*Create Buffer Objects */
-	cl_offset_x		= clCreateBuffer(context, CL_MEM_READ_ONLY, sizeof(float), NULL, &err);
+	cl_offset_x		= clCreateBuffer(context, CL_MEM_READ_ONLY, sizeof(double), NULL, &err);
 	checkError(err, "Couldn't create buffer");
-	cl_offset_y		= clCreateBuffer(context, CL_MEM_READ_ONLY, sizeof(float), NULL, &err);
+	cl_offset_y		= clCreateBuffer(context, CL_MEM_READ_ONLY, sizeof(double), NULL, &err);
 	checkError(err, "Couldn't create buffer");
 	cl_stepsize		= clCreateBuffer(context, CL_MEM_READ_ONLY, sizeof(float), NULL, &err);
 	checkError(err, "Couldn't create buffer");
@@ -273,6 +261,17 @@ int main(int argc, char **argv)
 	gl_tex = init_gl(window_width, window_height);
 	cl_tex = clCreateFromGLTexture2D(context, CL_MEM_WRITE_ONLY, GL_TEXTURE_2D, 0, gl_tex, &err);
 	checkError(err, "Couldn't create cl_tex");
+
+	err = clSetKernelArg(kernel, 3, sizeof(cl_mem), &cl_maxiterations);
+	checkError(err, "Couldn't set kernel argument");
+	err = clSetKernelArg(kernel, 4, sizeof(cl_mem), &cl_tex);
+	checkError(err, "Couldn't set kernel argument");
+	err = clSetKernelArg(kernel, 5, sizeof(cl_mem), &cl_colortable);
+	checkError(err, "Couldn't set kernel argument");
+	err = clSetKernelArg(kernel, 6, sizeof(cl_mem), &cl_window_width);
+	checkError(err, "Couldn't set kernel argument");
+	err = clSetKernelArg(kernel, 7, sizeof(cl_mem), &cl_window_height);
+	checkError(err, "Couldn't set kernel argument");
 
 
 	glutKeyboardFunc(handle_keys);
