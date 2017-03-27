@@ -80,6 +80,7 @@ void handle_keys(unsigned char key, int x, int y) {
 		OFFSET_X = 0;
 		OFFSET_Y = 0;
 		stepsize = 1.0f / ZOOMFACTOR;
+		zoomspeed = 0.05;
 		break;
 	}
 }
@@ -90,6 +91,12 @@ bool zoom_out;
 
 void handle_mouse(int button, int state,
 	int x, int y) {
+	if (button == 3) { // scroll up
+		zoomspeed *= 1.10;
+	}
+	if (button == 4) { // scroll dn
+		zoomspeed *= 0.90;
+	}
 	if (button == GLUT_LEFT_BUTTON && state == GLUT_DOWN) {
 		zoom_in = true;
 	}
@@ -116,22 +123,12 @@ void display() {
 	glFinish();
 	curr = glutGet(GLUT_ELAPSED_TIME); 
 	if (zoom_in) {
-		
 		stepsize = stepsize * pow(1.0-zoomspeed, (curr - prev) / 100.0);
-		
 	}
 	if (zoom_out) {
-		//curr = glutGet(GLUT_ELAPSED_TIME);
 		stepsize = stepsize * pow(1.0+zoomspeed, (curr - prev) / 100.0);
-		//prev = curr;
 	}
 	prev = curr;
-	//printf("Frame %d\n", runs);
-	//runs++;
-
-	//curr = glutGet(GLUT_ELAPSED_TIME);
-	//stepsize = stepsize * 0.99;// (float)pow(.95, (curr - prev) / 100.0);
-	//prev = curr;
 
 	err = clEnqueueWriteBuffer(command_queue, cl_offset_x, CL_TRUE, 0, sizeof(double), &OFFSET_X, 0, NULL, NULL);
 	checkError(err, "Couldn't enqueue off_x");
