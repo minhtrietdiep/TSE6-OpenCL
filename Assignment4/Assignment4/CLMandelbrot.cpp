@@ -22,7 +22,7 @@ const unsigned int window_height = 600;
 
 double OFFSET_X = 0;
 double OFFSET_Y = 0;
-const unsigned int ZOOMFACTOR = 100;
+const unsigned int ZOOMFACTOR = 200;
 const unsigned int MAX_ITERATIONS = 512; // because slow laptop :(
 const unsigned int COLORTABLE_SIZE = 2048;
 
@@ -64,32 +64,68 @@ cl_mem cl_colortable = NULL;
 unsigned long long curr, prev;
 double walksize = 0.1;
 int runs = 0;
+double zoomspeed = 0.05;
 
 void handle_keys(unsigned char key, int x, int y) {
 	switch(key) {
-	case 'q':
-		stepsize *= 0.95;
+	case '=':
+	case '+':
+		zoomspeed *= 1.10;
 		break;
-	case 'e':
-		stepsize *= 1.05;
+	case '-':
+	case '_':
+		zoomspeed *= 0.90;
 		break;
-	case 'w':
-		OFFSET_Y -= walksize * stepsize*200;
+	case 'r':
+		OFFSET_X = 0;
+		OFFSET_Y = 0;
+		stepsize = 1.0f / ZOOMFACTOR;
 		break;
-	case 'a':
-		OFFSET_X += walksize * stepsize * 200;
-		break;
-	case 's':
-		OFFSET_Y += walksize * stepsize * 200;
-		break;
-	case 'd':
-		OFFSET_X -= walksize * stepsize * 200;
-		break;
+	}
+}
+
+bool zoom_in;
+
+bool zoom_out;
+
+void handle_mouse(int button, int state,
+	int x, int y) {
+	if (button == GLUT_LEFT_BUTTON && state == GLUT_DOWN) {
+		zoom_in = true;
+	}
+	if (button == GLUT_LEFT_BUTTON && state == GLUT_UP) {
+		zoom_in = false;
+	}
+	if (button == GLUT_RIGHT_BUTTON && state == GLUT_DOWN) {
+		zoom_out = true;
+	}
+	if (button == GLUT_RIGHT_BUTTON && state == GLUT_UP) {
+		zoom_out = false;
+	}
+	if (button == GLUT_MIDDLE_BUTTON && state == GLUT_DOWN) {
+		printf("    x: %d,     y: %d\n", x, y);
+		double newX = ((double)x - (double)window_width / 2.0) / ((double)window_width / 2.0);
+		double newY = ((double)y - (double)window_height / 2.0) / ((double)window_height / 2.0);
+		printf("new_x: %f, new_y: %f\n", newX, newY);
+		OFFSET_X += -newX * stepsize*ZOOMFACTOR;
+		OFFSET_Y += newY * stepsize*ZOOMFACTOR;
 	}
 }
 
 void display() {
 	glFinish();
+	curr = glutGet(GLUT_ELAPSED_TIME); 
+	if (zoom_in) {
+		
+		stepsize = stepsize * pow(1.0-zoomspeed, (curr - prev) / 100.0);
+		
+	}
+	if (zoom_out) {
+		//curr = glutGet(GLUT_ELAPSED_TIME);
+		stepsize = stepsize * pow(1.0+zoomspeed, (curr - prev) / 100.0);
+		//prev = curr;
+	}
+	prev = curr;
 	//printf("Frame %d\n", runs);
 	//runs++;
 
@@ -275,6 +311,7 @@ int main(int argc, char **argv)
 
 
 	glutKeyboardFunc(handle_keys);
+	glutMouseFunc(handle_mouse);
 	glutDisplayFunc(display);
 	glutMainLoop();
 
