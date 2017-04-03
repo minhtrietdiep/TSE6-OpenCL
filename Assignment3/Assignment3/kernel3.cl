@@ -9,8 +9,8 @@ kernel void kernel3(global int *gdata, local int *sdata) {
 	barrier(CLK_GLOBAL_MEM_FENCE);
 
 	// do reduction in Local memory
-	for (unsigned int long long s = 1; s < get_local_size(0); s *= 2) {
-		int long long index = 2 * s*tid;
+	for (unsigned int s = 1; s < get_local_size(0); s *= 2) {
+		int index = 2 * s*tid;
 		if (index<get_local_size(0)) {
 			sdata[index] += sdata[index + s];
 		}

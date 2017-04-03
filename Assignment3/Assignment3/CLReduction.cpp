@@ -267,11 +267,11 @@ int main() {
 		checkError(err, "Couldn't enqueue command queue");
 		clFinish(command_queue);
 
-		err = clGetEventProfilingInfo(timingEvent, CL_PROFILING_COMMAND_START, sizeof(cl_ulong), &clStartTime, NULL);
+		/*err = clGetEventProfilingInfo(timingEvent, CL_PROFILING_COMMAND_START, sizeof(cl_ulong), &clStartTime, NULL);
 		checkError(err, "Couldn't get start time");
 		err = clGetEventProfilingInfo(timingEvent, CL_PROFILING_COMMAND_END, sizeof(cl_ulong), &clEndTime, NULL);
 		checkError(err, "Couldn't get end time");
-		elapsed += (clEndTime - clStartTime);
+		elapsed += (clEndTime - clStartTime);*/
 
 		globalSize[0] /= localSize[0];
 		if (kernelChoice == 3) {
