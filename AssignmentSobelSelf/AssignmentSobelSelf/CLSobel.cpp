@@ -10,6 +10,10 @@
 #include "CLGetPlatforms.hpp"
 
 #include "ImageUtils.h"
+#include <vector>
+#include "MyLogger.hpp"
+#include <iomanip>
+#include <sstream>
 
 
 // Types:
@@ -28,33 +32,22 @@ typedef	uint SobelFlag;
 #define MAX_TEST_KERNELS 100
 
 #define FILENAME "./KernelSobel.cl"
-#define KERNELNAME "Sobel"
 
-typedef struct
-{
-	char				pKernelName[BUFSIZ];
-	uint				numBytesPerWorkItemRead;
-	cl_kernel			kernelHdl;
-	SobelFlag			testFlag;
-} SobelKernel;
+#define LOGFILENAME "./Results.log"
 
-typedef struct
-{
-	// CL platform handles:
-	cl_device_id		deviceID;
-	cl_context			contextHdl;
-	cl_program			programHdl;
-	cl_command_queue	cmdQHdl;
+MyLogger logger;
 
-	cl_mem buffIn;
-	cl_mem buffOut;
-
-	SobelKernel	    	pTests[MAX_TEST_KERNELS];
-	uint				numTests;
-} OCLResources;
+std::vector<std::string> kernelNames = {
+	"Sobel_v1_uchar"			 ,
+	"Sobel_v2_uchar16"			 ,
+	"Sobel_v3_uchar16_to_float16",
+	"Sobel_v4_uchar16_to_float16_16",
+};
 
 int main(int argc, char **argv)
 {
+	logger.SetFile(LOGFILENAME);
+
 	/* Init OpenCL variables */
 	cl_platform_id *platforms;
 	cl_device_id device_id = nullptr;
@@ -72,7 +65,7 @@ int main(int argc, char **argv)
 	cl_mem buffOut;
 
 	// Image data:
-	const char*		pInputImg1Str = "Henri2048x2048.ppm";
+	const char*		pInputImg1Str = "Henri2048x2048.ppm"; //"ae86.ppm";//
 	uint			height, width;
 	uint			heightReSz, widthReSz;
 	uint			szRGBImgPixelBytes;
@@ -89,6 +82,8 @@ int main(int argc, char **argv)
 	int platformChoice = -1;
 	char *deviceInfo;
 	size_t deviceInfoSize;
+	int kernelChoice = -1;
+	std::string chosenKernel;
 
 	/* CPU/GPU choice */
 	printf("Please choose a calculation device:\n[0] CPU\n[1] GPU\n");
@@ -118,6 +113,17 @@ int main(int argc, char **argv)
 		platformChoice = 0;
 	}
 
+	/* Kernel choice */
+
+	printf("Please choose a kernel (0 to %llu): \n", kernelNames.size()-1);
+	scanf_s("%d", &kernelChoice);
+	if (kernelChoice < 0 || kernelChoice > kernelNames.size()-1) {
+		printf("Invalid selection, choosing Kernel 1");
+		kernelChoice = 0;
+		chosenKernel = kernelNames[0];
+	}
+	chosenKernel = kernelNames[kernelChoice];
+
 	platforms = new cl_platform_id[ret_num_platforms];
 	err = clGetPlatformIDs(ret_num_platforms, platforms, &ret_num_platforms);
 	checkError(err, "Couldn't get platform IDs");
@@ -142,7 +148,7 @@ int main(int argc, char **argv)
 	program = build_program(context, device_id, FILENAME);
 
 	/* Create OpenCL kernel*/
-	kernel = clCreateKernel(program, KERNELNAME, &err);
+	kernel = clCreateKernel(program, chosenKernel.c_str(), &err);
 	checkError(err, "Couldn't create kernel");
 	std::cout << "Kernel created" << std::endl;
 
@@ -165,14 +171,27 @@ int main(int argc, char **argv)
 	checkError(err, "clCreateBuffer failed.", "clCreateBuffer.");
 
 	// perform run
+
+
 	size_t		dimNDR[2];
 	size_t		dimWG[2];
 	dimWG[0] = 32;
 	dimWG[1] = 8;
-	auto numBytesPerWorkItemRead = 1 * sizeof(unsigned char);	// for uchar / SINGLEREAD
+	uint numBytesPerWorkItemRead;
+	if (kernelChoice == 0) {
+		numBytesPerWorkItemRead = 1 * sizeof(unsigned char);	// for uchar / SINGLEREAD
+	}
+	else {
+		numBytesPerWorkItemRead = 16 * sizeof(unsigned char);	// for uchar / SINGLEREAD
+	}
 	dimNDR[0] = widthReSz / numBytesPerWorkItemRead;
-	dimNDR[1] = heightReSz;										// for uchar / SINGLEREAD
-
+	
+	if (kernelChoice == 3) {
+		dimNDR[1] = heightReSz/16;
+	}
+	else {
+		dimNDR[1] = heightReSz;	// for uchar / SINGLEREAD && !MEGABLOCK
+	}
 	// Make sure output buffer is cleared/zeroed  first, from last use:
 	U8* pU8GrayData = (U8*)_aligned_malloc(heightReSz*widthReSz, READ_ALIGNMENT);
 	memset(pU8GrayData, 0, heightReSz*widthReSz);
@@ -188,10 +207,12 @@ int main(int argc, char **argv)
 	checkError(err, "clSetKernelArg failed.", "clSetKernelArg");
 
 	// Do the run
-	err = clEnqueueNDRangeKernel(command_queue, kernel, 2, NULL, dimNDR, 0, 0, NULL, 0);
+	LARGE_INTEGER beginClock, endClock, clockFreq;
+	QueryPerformanceFrequency(&clockFreq);
+	QueryPerformanceCounter(&beginClock);
+	err = clEnqueueNDRangeKernel(command_queue, kernel, 2, NULL, dimNDR, dimWG, 0, NULL, 0);
 	clFinish(command_queue);
-	std::cout << "cl Run done" << std::endl;
-	
+	QueryPerformanceCounter(&endClock);
 	{
 		U8* pU8GrayDataWrite = (U8*)_aligned_malloc(heightReSz*widthReSz, WRITE_ALIGNMENT);
 		memset(pU8GrayDataWrite, 0, heightReSz*widthReSz);
@@ -208,6 +229,18 @@ int main(int argc, char **argv)
 		_aligned_free(pU8RGBDataWrite);
 	}
 	
+	double totalTime = double(endClock.QuadPart - beginClock.QuadPart) / clockFreq.QuadPart;
+	std::cout << "cl Run done, took " << totalTime << " seconds" << std::endl;
+	
+	int kernelNameLength = 32;
+	int deviceLength = 48;
+	int timeLength = 12;
+	std::stringstream logStream;
+	logStream << std::left << std::setw(kernelNameLength) << std::setfill(' ') << chosenKernel;
+	logStream << std::left << std::setw(deviceLength) << std::setfill(' ') << deviceInfo;
+	logStream << std::left << std::setw(timeLength) << std::setfill(' ') << totalTime << "seconds";
+	logger.Write(logStream.str());
+
 	_aligned_free(pGrayImgData);
 	_aligned_free(pGrayImgDataReSz);
 

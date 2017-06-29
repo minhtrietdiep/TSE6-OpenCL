@@ -21,11 +21,13 @@
   <ItemGroup>
     <ClCompile Include="CLGetPlatforms.cpp" />
     <ClCompile Include="CLSobel.cpp" />
+    <ClCompile Include="MyLogger.cpp" />
     <ClCompile Include="opencl_utils.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="CLGetPlatforms.hpp" />
     <ClInclude Include="ImageUtils.h" />
+    <ClInclude Include="MyLogger.hpp" />
     <ClInclude Include="opencl_utils.h" />
   </ItemGroup>
   <ItemGroup>

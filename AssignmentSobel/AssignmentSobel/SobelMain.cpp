@@ -27,6 +27,7 @@ typedef	uint SobelFlag;
 #define WRITE_ALIGNMENT 4096 // Intel recommended alignment
 
 #define MAX_TEST_KERNELS 100
+
 typedef struct
 {
 	char				pKernelName[BUFSIZ];
